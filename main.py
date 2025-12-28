@@ -1,106 +1,170 @@
-import requests
-import json
 import os
-from requests.auth import HTTPBasicAuth
+import json
 from dotenv import load_dotenv
-from payload import create_issue, create_project
+from requests.auth import HTTPBasicAuth
+from jira import JIRA, JIRAError
+from pprint import pprint
+from support import JiraSupport
 
-# Global Storage
+
+# Storage
 db_projects = []
+db_issue = []
 
 # Load variables from .env file
 load_dotenv()
 
 # Authentication
-auth = HTTPBasicAuth(os.environ["JIRA_EMAIL"], os.environ["JIRA_API_TOKEN"])
-
-# Server url
-server = os.environ["JIRA_SERVER"]
-
-# Function to print the code of HTTP to the console
-def print_status(response) -> None:
-    print(f"{response.request.method} Status: {response.status_code} {response.request.url}")
-
-# Get the issues types
-print("Getting issue types")
-url = server + "/rest/api/3/issue/createmeta"
-
-headers = {
-  "Accept": "application/json"
-}
-
-response = requests.request(
-   "GET",
-   url,
-   headers=headers,
-   auth=auth
+jira = JIRA(
+    server=os.environ["JIRA_SERVER"],
+    basic_auth=(os.environ["JIRA_EMAIL"], os.environ["JIRA_API_TOKEN"])
 )
 
-print_status(response)
-# print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
+# Own Class for the RESTAPI 
+
+jira_support = JiraSupport(
+    email=os.environ["JIRA_EMAIL"], 
+    api_token=os.environ["JIRA_API_TOKEN"],
+    domain=os.environ["JIRA_DOMAIN"]
+)
+
+# Test Connection
+try:
+    my_user = jira.myself()
+    print(f"Your User ID: {my_user['accountId']}")
+except Exception as e:
+    print("An error occurred:", e)
 
 
-# Create new issue
-print("Creating issue")
-url = server + "/rest/api/2/issue"
+# Get all the Projects
+def get_projects():
+    projects = jira.projects()
+    db = []
 
-headers = {
-  "Accept": "application/json",
-  "Content-Type": "application/json"
-}
+    for project in projects:
+        details = {
+            'key': project.key,
+            'name': project.name,
+            'id': project.id,
+            'project_type': project.projectTypeKey,
+            'issues': []
+        }
+        db.append(details)
 
-payload = json.dumps(create_issue("SCRUM", "BUG", "Fix Bug", "Bug on the frontend in section cards"))
-response = requests.request("POST", url, data=payload, headers=headers, auth=auth)
-print_status(response)
-#print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
+    return db
 
+# Create Project
+def create_new_project(project_key, project_name, project_description):
+        projects = get_projects()
 
-# Get the projects list
-print("Searching all projects")
-headers = {
-  "Accept": "application/json"
-}
-
-url = server + "/rest/api/3/project/search"
-response = requests.request("GET", url, headers=headers, auth=auth)
-print_status(response)
-data = response.json()
-#print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
-
-
-if response.status_code == 200:
-    for project in data["values"]:
-      db_projects.append(project["key"]) 
-else:
-   print("Failed to extract data")
+        if any(p["key"] == project_key for p in projects):
+            print(f"Project {project_key}already exists")
+            return None
+        else:
+            project = jira_support.create_new_project(project_key, project_name, project_description)
+            print(f"Project key {project_key} created")
+        return project
 
 
-# Create new project
-print("Creating new project")
-url = server + "/rest/api/3/project"
 
-headers = {
-  "Accept": "application/json",
-  "Content-Type": "application/json"
-}
+# Get all issue
+def get_issues(db_projects):
+    count = 0
+    for project in db_projects:
+        project_key = project['key']
+        issues = jira.search_issues(f"project={project_key}")
+        for issue in issues:
+            details = {
+                'key': issue.key,
+                'id': issue.id
+            }
+            db_projects[count]['issues'].append(details)
+        count += 1
+    return db_projects
 
-payload = json.dumps(create_project("SCRUMTE", "TEST PROJECT Test22", "Test Project Description22", "PROJECT_LEAD"))
-response = requests.request("POST", url, data=payload, headers=headers, auth=auth)
-print_status(response)
-print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
-if response.status_code == 201:
-   db_projects.append(response.text["key"])
-print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
 
-# Get Users Info
-print("Get users info")
-url = server + "/rest/api/3/users/search"
-headers = {
-  "Accept": "application/json"
-}
 
-response = requests.request("GET", url, headers=headers, auth=auth)
-print_status(response)
-#print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
+# Create issue
+def create_issue(project_key, summary, description, issue_type="Task"):
+    issue_dict = {
+        'project': {'key': project_key},
+        'summary': summary,
+        'description': description,
+        'issuetype': {'name': issue_type},
 
-print(db_projects)
+    }
+    new_issue = jira.create_issue(fields=issue_dict)
+    return new_issue
+
+# Update issue
+def update_issue(issue_key, summary, description):
+    issue = jira.issue(issue_key)
+    issue.update(summary=summary, description=description)
+
+# Assign all unasigned issues
+def assign_issue_to_user(issue_key, user_id):
+    issue = jira.issue(issue_key)
+    if issue.fields.assignee == None:
+        print(f"Update user for: {user_id}")
+        issue.update(assignee={'accountId': f'{user_id}' })
+    else: 
+        print("Update user failed: Because user alreacy assign to the issue")
+
+# Assign issues to a sprint on a project
+def update_issue_sprint(issue_key, sprint_id):
+    issue = jira.issue(issue_key)
+    issue.update(customfield_10020=sprint_id)
+
+# Get all the spring
+def get_springs_id():
+    db = []
+    boards = jira.boards()
+    for board in boards:
+        sprints = jira.sprints(board.id)
+        for sprint in sprints:
+            details = {
+                'name': sprint.name,
+                'id': sprint.id
+            }
+            db.append(details)
+    return db
+
+
+db_projects = get_projects()
+db_projects = get_issues(db_projects)
+
+#pprint(db_projects, indent=1)
+
+# Test Connection
+try:
+    my_user = jira.myself()
+    print(f"Your User ID: {my_user['accountId']}")
+except Exception as e:
+    print("An error occurred:", e)
+
+#Create Project 
+try:
+    respose = create_new_project("SCRUM28121", "SCRUM2812", "SCRUM2812")
+except Exception as e:
+    print(f"Error on creating a project: {e}")
+
+# Create Issue
+try:
+    issue = create_issue("SCRUM", "Test for the SCRUM", "Test for the SCRUM", issue_type="Task")
+    print(f"Ticket created: {issue}")
+except Exception as e:
+    print(f"Error on creating the issue: {e}")
+ 
+# Update Issue
+try:
+    update_issue(issue, "New summary", "New Description") 
+except Exception as e:
+    print(f"Error on updating issue: {e}")
+
+# Assign someone to issue 
+try:
+    assign_issue_to_user(issue, my_user['accountId'])
+except Exception as e:
+    print(f"Error on the assigment: {e}")
+
+
