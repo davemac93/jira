@@ -38,7 +38,7 @@ class JiraSupport(BaseModel):
         return response.text
 
     # Create new project
-    def create_new_project(self, project_key, project_name, project_description):
+    def create_project(self, project_key, project_name):
         url = f"https://{self.domain}.atlassian.net/rest/api/3/project"
 
         headers = {
@@ -51,9 +51,3 @@ class JiraSupport(BaseModel):
 
         return response
 
-
-jira_support = JiraSupport(
-    email=os.environ["JIRA_EMAIL"], 
-    api_token=os.environ["JIRA_API_TOKEN"],
-    domain=os.environ["JIRA_DOMAIN"]
-)
