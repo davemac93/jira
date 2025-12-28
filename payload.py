@@ -14,10 +14,11 @@ def create_issue(project_key, issue_type, summary, description_text):
    }
 }
 
-def create_project(project_key, project_name, project_description, assignee="UNASSIGNED"):
+def create_project(project_key, project_name):
     return {
   "key": project_key,
   "leadAccountId": "712020:66cfb0a7-db17-46c9-91c5-c938844ceadc",
   "name": project_name,
+
   "projectTypeKey": "software"
 }
