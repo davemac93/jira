@@ -28,12 +28,6 @@ jira_support = JiraSupport(
     domain=os.environ["JIRA_DOMAIN"]
 )
 
-# Test Connection
-try:
-    my_user = jira.myself()
-    print(f"Your User ID: {my_user['accountId']}")
-except Exception as e:
-    print("An error occurred:", e)
 
 
 # Get all the Projects
@@ -54,15 +48,19 @@ def get_projects():
     return db
 
 # Create Project
-def create_new_project(project_key, project_name, project_description):
+def create_new_project(project_key, project_name):
         projects = get_projects()
 
         if any(p["key"] == project_key for p in projects):
-            print(f"Project {project_key}already exists")
+            print(f"Project {project_key} already exists")
             return None
         else:
-            project = jira_support.create_new_project(project_key, project_name, project_description)
-            print(f"Project key {project_key} created")
+            project = jira_support.create_project(project_key.upper(), project_name)
+            if project.status_code == 201:
+                print(f"Project key {project_key} created")
+            else:
+                print(f"Error the request to create project: {project} {project.text}")
+                return None
         return project
 
 
@@ -144,7 +142,7 @@ except Exception as e:
 
 #Create Project 
 try:
-    respose = create_new_project("SCRUM28121", "SCRUM2812", "SCRUM2812")
+    respose = create_new_project("TEST25", "Test25")
 except Exception as e:
     print(f"Error on creating a project: {e}")
 
